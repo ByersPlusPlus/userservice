@@ -27,6 +27,7 @@ use crate::log::setup_log;
 
 mod log;
 mod schema;
+mod macros;
 mod models;
 
 embed_migrations!();

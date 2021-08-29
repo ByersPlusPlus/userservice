@@ -3,6 +3,7 @@ use prost_types::Duration;
 use super::schema::*;
 use super::userservice::BppUser;
 use diesel::prelude::*;
+use crate::bpp_model_impl;
 
 #[derive(Queryable, AsChangeset, Identifiable)]
 #[primary_key(rank_id)]
@@ -83,6 +84,10 @@ pub struct UserPermission {
     pub granted: bool
 }
 
+bpp_model_impl!(Group, InsertGroup, group_id, i32, crate::schema::bpp_groups::dsl, bpp_groups);
+bpp_model_impl!(User, channel_id, String, crate::schema::bpp_users::dsl, bpp_users);
+bpp_model_impl!(Rank, InsertRank, rank_id, i32, crate::schema::bpp_ranks::dsl, bpp_ranks);
+
 impl User {
     pub fn new(channel_id: String, display_name: String, hours_seconds: i64, hours_nanos: i32, money: i64, first_seen_at: NaiveDateTime, last_seen_at: NaiveDateTime) -> User {
         User {
@@ -94,22 +99,6 @@ impl User {
             first_seen_at,
             last_seen_at
         }
-    }
-
-    pub fn get_from_database<S: AsRef<str>>(check_channel_id: S, conn: &PgConnection) -> Option<User> {
-        use super::schema::bpp_users::dsl::*;
-        bpp_users.filter(channel_id.eq(check_channel_id.as_ref())).first::<User>(conn).ok()
-    }
-
-    /// Creates or updates a user in the database.
-    pub fn save_to_database(&self, conn: &diesel::PgConnection) -> QueryResult<usize> {
-        use super::schema::bpp_users::dsl::*;
-        diesel::insert_into(bpp_users)
-            .values(self)
-            .on_conflict(channel_id)
-            .do_update()
-            .set(self)
-            .execute(conn)
     }
 
     pub fn check_if_exists(check_channel_id: &String, conn: &diesel::PgConnection) -> bool {
