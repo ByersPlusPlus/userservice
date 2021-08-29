@@ -1,11 +1,47 @@
 use chrono::NaiveDateTime;
 use prost_types::Duration;
-use super::schema::bpp_users;
+use super::schema::*;
 use super::userservice::BppUser;
-use super::youtubeservice::YouTubeChatMessage;
 use diesel::prelude::*;
 
-#[derive(Queryable, Insertable, AsChangeset)]
+#[derive(Queryable, AsChangeset, Identifiable)]
+#[primary_key(rank_id)]
+#[table_name = "bpp_ranks"]
+pub struct Rank {
+    pub rank_id: i32,
+    pub rank_name: String,
+    pub rank_sorting: i32,
+    pub hour_requirement_seconds: i64,
+    pub hour_requirement_nanos: i32
+}
+
+#[derive(Insertable)]
+#[table_name = "bpp_ranks"]
+pub struct InsertRank {
+    pub rank_name: String,
+    pub rank_sorting: i32,
+    pub hour_requirement_seconds: i64,
+    pub hour_requirement_nanos: i32
+}
+
+#[derive(Queryable, AsChangeset, Identifiable)]
+#[primary_key(group_id)]
+#[table_name = "bpp_groups"]
+pub struct Group {
+    pub group_id: i32,
+    pub group_name: String,
+    pub bonus_payout: i32
+}
+
+#[derive(Insertable)]
+#[table_name = "bpp_groups"]
+pub struct InsertGroup {
+    pub group_name: String,
+    pub bonus_payout: i32
+}
+
+#[derive(Queryable, Insertable, AsChangeset, Identifiable)]
+#[primary_key(channel_id)]
 #[table_name="bpp_users"]
 pub struct User {
     pub channel_id: String,
@@ -15,6 +51,36 @@ pub struct User {
     pub money: i64,
     pub first_seen_at: NaiveDateTime,
     pub last_seen_at: NaiveDateTime
+}
+
+#[derive(Queryable, Insertable, AsChangeset, Identifiable, Associations)]
+#[primary_key(group_id, permission)]
+#[table_name="bpp_groups_permissions"]
+#[belongs_to(Group, foreign_key = "group_id")]
+pub struct GroupPermission {
+    pub group_id: i32,
+    pub permission: String,
+    pub granted: bool
+}
+
+#[derive(Queryable, Insertable, Identifiable, Associations)]
+#[primary_key(group_id, channel_id)]
+#[table_name="bpp_groups_users"]
+#[belongs_to(Group, foreign_key = "group_id")]
+#[belongs_to(User, foreign_key = "channel_id")]
+pub struct GroupUser {
+    pub group_id: i32,
+    pub channel_id: String
+}
+
+#[derive(Queryable, Insertable, AsChangeset, Identifiable, Associations)]
+#[primary_key(channel_id, permission)]
+#[table_name="bpp_users_permissions"]
+#[belongs_to(User, foreign_key = "channel_id")]
+pub struct UserPermission {
+    pub channel_id: String,
+    pub permission: String,
+    pub granted: bool
 }
 
 impl User {
