@@ -1,3 +1,28 @@
+#[macro_export]
+macro_rules! bpp_foreign_model_impl {
+    ($fn_name:ident, $model_struct:ty, $check_field:ident, $check_type:ty, $schema:path, $foreign_schema:path, $table_name:ident, $foreign_table_name:ident) => {
+        impl $model_struct {
+            pub fn $fn_name(check: $check_type, conn: &PgConnection) -> Vec<$model_struct> {
+                use $schema::*;
+                use $foreign_schema::*;
+                $table_name.filter($check_field.eq(check))
+                    .inner_join($foreign_table_name)
+                    .select($foreign_table_name::all_columns())
+                    .load::<$model_struct>(conn)
+                    .unwrap()
+            }
+        }
+    };
+    ($fn_name:ident, $model_struct:ty, $check_field:ident, $check_type:ty, $schema:path, $table_name:ident) => {
+        impl $model_struct {
+            pub fn $fn_name(check: $check_type, conn: &PgConnection) -> Vec<$model_struct> {
+                use $schema::*;
+                $table_name.filter($check_field.eq(check)).load::<$model_struct>(conn).unwrap()
+            }
+        }
+    }
+}
+
 /// A macro which automatically generates saving and loading database functions
 #[macro_export]
 macro_rules! bpp_model_impl {
