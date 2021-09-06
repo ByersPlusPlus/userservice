@@ -1,7 +1,7 @@
 use std::ops::Deref;
 
 use super::schema::*;
-use super::userservice::BppUser;
+use super::userservice::{BppUser, BppGroup};
 use crate::{bpp_foreign_model_impl, bpp_model_impl};
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
@@ -27,13 +27,14 @@ pub struct InsertRank {
     pub hour_requirement_nanos: i32,
 }
 
-#[derive(Queryable, AsChangeset, Identifiable)]
+#[derive(Queryable, AsChangeset, Identifiable, PartialEq, Eq)]
 #[primary_key(group_id)]
 #[table_name = "bpp_groups"]
 pub struct Group {
     pub group_id: i32,
     pub group_name: String,
     pub bonus_payout: i32,
+    pub group_sorting: i32
 }
 
 #[derive(Insertable)]
@@ -41,6 +42,7 @@ pub struct Group {
 pub struct InsertGroup {
     pub group_name: String,
     pub bonus_payout: i32,
+    pub group_sorting: i32
 }
 
 #[derive(Queryable, Insertable, AsChangeset, Identifiable)]
@@ -185,6 +187,23 @@ impl From<Vec<UserPermission>> for PermissionStrings {
     }
 }
 
+// impl PartialEq for Group {
+//     fn eq(&self, other: &Self) -> bool {
+//         self.group_id == other.group_id
+//     }
+// }
+impl PartialOrd for Group {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.group_sorting.partial_cmp(&other.group_sorting)
+    }
+}
+
+impl Ord for Group {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.group_sorting.cmp(&other.group_sorting)
+    }
+}
+
 impl User {
     pub fn new(
         channel_id: String,
@@ -216,6 +235,18 @@ impl User {
         return exists;
     }
 
+    pub fn get_active_rank(&self, conn: &diesel::PgConnection) -> Option<Rank> {
+        use super::schema::bpp_ranks::dsl::*;
+
+        // Get all ranks which match the hour requirements and sort by the sorting field
+        let rank: Option<Rank> = bpp_ranks
+            .filter(hour_requirement_seconds.ge(self.hours_seconds))
+            .filter(hour_requirement_nanos.ge(self.hours_nanos))
+            .order(rank_sorting.desc())
+            .first::<Rank>(conn).ok();
+        return rank;
+    }
+
     pub fn to_userservice_user(self, conn: &diesel::PgConnection) -> BppUser {
         let mut prost_duration = prost_types::Duration::default();
         prost_duration.seconds = self.hours_seconds;
@@ -231,24 +262,41 @@ impl User {
         };
 
         let groups = Group::get_groups_for_user(self.channel_id.clone(), &conn);
-        let permissions: PermissionStrings =
-            UserPermission::get_permissions_for_user(self.channel_id.clone(), &conn).into();
+        let permissions =
+            UserPermission::get_permissions_for_user(self.channel_id.clone(), &conn);
+        let permissions: Vec<super::userservice::Permission> = permissions.into_iter()
+            .map(|p|super::userservice::Permission {
+                permission: p.permission,
+                granted: p.granted,
+            })
+            .collect();
         let groups = groups
             .iter()
             .map(|group| {
-                let permissions: PermissionStrings =
-                    GroupPermission::get_permissions_for_group(group.group_id, &conn).into();
-                let permissions = permissions.deref().clone();
+                let permissions =
+                    GroupPermission::get_permissions_for_group(group.group_id, &conn);
+                let permissions = permissions.into_iter()
+                    .map(|p|super::userservice::Permission {
+                        permission: p.permission,
+                        granted: p.granted,
+                    })
+                    .collect();
 
                 super::userservice::BppGroup {
                     group_id: group.group_id,
                     group_name: group.group_name.clone(),
                     permissions,
                     bonus_payout: group.bonus_payout,
+                    group_sorting: group.group_sorting,
                 }
             })
             .collect::<Vec<super::userservice::BppGroup>>();
-        let permissions = permissions.deref().clone();
+
+        let rank = if let Some(rank) = self.get_active_rank(&conn) {
+            rank.rank_name
+        } else {
+            "default".to_string()
+        };
 
         let bpp_user = BppUser {
             channel_id: self.channel_id,
@@ -259,8 +307,31 @@ impl User {
             last_seen_at: Some(last_seen_at_ts),
             groups,
             permissions,
+            rank
         };
         return bpp_user;
+    }
+}
+
+impl From<BppGroup> for Group {
+    fn from(bpp_group: BppGroup) -> Self {
+        Group {
+            group_id: bpp_group.group_id,
+            group_name: bpp_group.group_name,
+            bonus_payout: bpp_group.bonus_payout,
+            group_sorting: bpp_group.group_sorting,
+        }
+    }
+}
+
+impl From<&BppGroup> for Group {
+    fn from(bpp_group: &BppGroup) -> Self {
+        Group {
+            group_id: bpp_group.group_id,
+            group_name: bpp_group.group_name.clone(),
+            bonus_payout: bpp_group.bonus_payout,
+            group_sorting: bpp_group.group_sorting,
+        }
     }
 }
 

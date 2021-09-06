@@ -3,6 +3,7 @@ table! {
         group_id -> Int4,
         group_name -> Varchar,
         bonus_payout -> Int4,
+        group_sorting -> Int4,
     }
 }
 
