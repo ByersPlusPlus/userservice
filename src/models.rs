@@ -52,7 +52,6 @@ pub struct User {
     pub channel_id: String,
     pub display_name: String,
     pub hours_seconds: i64,
-    pub hours_nanos: i32,
     pub money: f64,
     pub first_seen_at: NaiveDateTime,
     pub last_seen_at: NaiveDateTime,
@@ -218,7 +217,6 @@ impl User {
             channel_id,
             display_name,
             hours_seconds,
-            hours_nanos,
             money,
             first_seen_at,
             last_seen_at,
@@ -241,7 +239,6 @@ impl User {
         // Get all ranks which match the hour requirements and sort by the sorting field
         let rank: Option<Rank> = bpp_ranks
             .filter(hour_requirement_seconds.ge(self.hours_seconds))
-            .filter(hour_requirement_nanos.ge(self.hours_nanos))
             .order(rank_sorting.desc())
             .first::<Rank>(conn).ok();
         return rank;
@@ -250,7 +247,7 @@ impl User {
     pub fn to_userservice_user(self, conn: &diesel::PgConnection) -> BppUser {
         let mut prost_duration = prost_types::Duration::default();
         prost_duration.seconds = self.hours_seconds;
-        prost_duration.nanos = self.hours_nanos;
+        prost_duration.nanos = 0;
 
         let first_seen_at_ts = prost_types::Timestamp {
             seconds: self.first_seen_at.timestamp() as i64,
@@ -399,7 +396,6 @@ impl From<BppUser> for User {
             channel_id: user.channel_id,
             display_name: user.display_name,
             hours_seconds: hours.seconds,
-            hours_nanos: hours.nanos,
             money: user.money,
             first_seen_at: first_seen_at_naive,
             last_seen_at: last_seen_at_naive,
@@ -424,7 +420,6 @@ impl From<&BppUser> for User {
             channel_id: user.channel_id.clone(),
             display_name: user.display_name.clone(),
             hours_seconds: hours.seconds,
-            hours_nanos: hours.nanos,
             money: user.money,
             first_seen_at: first_seen_at_naive,
             last_seen_at: last_seen_at_naive,

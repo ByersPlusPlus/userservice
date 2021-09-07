@@ -62,14 +62,11 @@ pub fn connect_to_database() -> Pool<ConnectionManager<PgConnection>> {
 
 fn calculate_hours_and_money(user: &mut User, now: &NaiveDateTime, settings: Settings, conn: &PgConnection) {
     let new_hours_seconds;
-    let new_hours_nanos;
-    let hours_duration = chrono::Duration::seconds(user.hours_seconds)
-        + chrono::Duration::nanoseconds(user.hours_nanos.into());
+    let hours_duration = chrono::Duration::seconds(user.hours_seconds);
     let new_duration = *now - user.last_seen_at;
     debug!("Between the last time the user was seen and now, {} seconds have passed", new_duration.num_seconds());
     let hours = hours_duration + new_duration;
     new_hours_seconds = hours.num_seconds();
-    new_hours_nanos = hours.num_nanoseconds().unwrap() as i32;
     debug!(
         "Updating hours of {} ({}) from {}s to {}s",
         user.channel_id,
@@ -79,7 +76,6 @@ fn calculate_hours_and_money(user: &mut User, now: &NaiveDateTime, settings: Set
     );
 
     user.hours_seconds = new_hours_seconds;
-    user.hours_nanos = new_hours_nanos;
 
     // Grant x money per minute
     let mut money_per_minute: f64 = settings.default_payout as f64;
@@ -91,7 +87,7 @@ fn calculate_hours_and_money(user: &mut User, now: &NaiveDateTime, settings: Set
 
     let new_money = user.money + money_per_second * new_duration.num_seconds() as f64;
     debug!(
-        "Updating money of {} ({}) from {} to {}",
+        "Updating money of {} ({}) from {:.2} to {:.2}",
         user.channel_id, user.display_name, user.money, new_money
     );
     user.money = new_money;
