@@ -21,7 +21,7 @@ async-stream = "0.3.2"
 fern = { version = "0.6.0", features = ["colored"] }
 log = "0.4.14"
 chrono = "0.4.19"
-diesel = { version = "1.4.7", features = ["postgres", "r2d2", "chrono"] }
+diesel = { version = "1.4.7", features = ["postgres", "r2d2", "chrono", "numeric"] }
 diesel_migrations = "1.4.0"
 dotenv = "0.15.0"
 r2d2 = "0.8.9"

@@ -1,0 +1,2 @@
+-- Your SQL goes here
+ALTER TABLE bpp_users ALTER COLUMN money TYPE DOUBLE PRECISION;

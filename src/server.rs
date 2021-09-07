@@ -71,24 +71,25 @@ fn calculate_hours_and_money(user: &mut User, now: &NaiveDateTime, settings: Set
     new_hours_seconds = hours.num_seconds();
     new_hours_nanos = hours.num_nanoseconds().unwrap() as i32;
     debug!(
-        "Updating hours of {} ({}) from {} to {}",
+        "Updating hours of {} ({}) from {}s to {}s",
         user.channel_id,
         user.display_name,
-        user.hours_seconds / 60 / 60,
-        new_hours_seconds / 60 / 60
+        user.hours_seconds,
+        new_hours_seconds
     );
 
     user.hours_seconds = new_hours_seconds;
     user.hours_nanos = new_hours_nanos;
 
     // Grant x money per minute
-    let mut money_per_minute = settings.default_payout;
+    let mut money_per_minute: f64 = settings.default_payout as f64;
     let user_groups = Group::get_groups_for_user(user.channel_id.clone(), conn);
     for group in user_groups {
-        money_per_minute += group.bonus_payout;
+        money_per_minute += group.bonus_payout as f64;
     }
+    let money_per_second: f64 = money_per_minute / 60.0;
 
-    let new_money = user.money + money_per_minute as i64 * new_duration.num_minutes();
+    let new_money = user.money + money_per_second * new_duration.num_seconds() as f64;
     debug!(
         "Updating money of {} ({}) from {} to {}",
         user.channel_id, user.display_name, user.money, new_money
@@ -120,7 +121,7 @@ async fn fetch_users_from_messages(
                 message.display_name.clone(),
                 0,
                 0,
-                0,
+                0 as f64,
                 now,
                 now,
             )

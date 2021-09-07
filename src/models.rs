@@ -53,7 +53,7 @@ pub struct User {
     pub display_name: String,
     pub hours_seconds: i64,
     pub hours_nanos: i32,
-    pub money: i64,
+    pub money: f64,
     pub first_seen_at: NaiveDateTime,
     pub last_seen_at: NaiveDateTime,
 }
@@ -210,7 +210,7 @@ impl User {
         display_name: String,
         hours_seconds: i64,
         hours_nanos: i32,
-        money: i64,
+        money: f64,
         first_seen_at: NaiveDateTime,
         last_seen_at: NaiveDateTime,
     ) -> User {
