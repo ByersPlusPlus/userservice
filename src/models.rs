@@ -238,7 +238,7 @@ impl User {
 
         // Get all ranks which match the hour requirements and sort by the sorting field
         let rank: Option<Rank> = bpp_ranks
-            .filter(hour_requirement_seconds.ge(self.hours_seconds))
+            .filter(hour_requirement_seconds.le(self.hours_seconds))
             .order(rank_sorting.desc())
             .first::<Rank>(conn).ok();
         return rank;
