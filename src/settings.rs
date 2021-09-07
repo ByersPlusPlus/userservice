@@ -16,7 +16,7 @@ impl Default for Settings {
     fn default() -> Settings {
         Settings {
             default_payout: 1,
-            active_time: 5
+            active_time: 5 * 60
         }
     }
 }

@@ -88,7 +88,7 @@ fn calculate_hours_and_money(user: &mut User, now: &NaiveDateTime, settings: Set
     }
 
     let new_money = user.money + money_per_minute as i64 * new_duration.num_minutes();
-    info!(
+    debug!(
         "Updating money of {} ({}) from {} to {}",
         user.channel_id, user.display_name, user.money, new_money
     );
@@ -108,11 +108,11 @@ async fn fetch_users_from_messages(
         let conn = pool.get()?;
         let now = Utc::now().naive_utc();
         let mut user = if User::check_if_exists(&message.channel_id, &conn) {
-            info!("Updating existing user {}", &message.channel_id);
+            debug!("Updating existing user {}", &message.channel_id);
             // Update the user
             User::get_from_database(&message.channel_id, &conn).unwrap()
         } else {
-            info!("Creating new user {}", &message.channel_id);
+            debug!("Creating new user {}", &message.channel_id);
             // Create the user
             User::new(
                 message.channel_id.clone(),
@@ -132,7 +132,7 @@ async fn fetch_users_from_messages(
 
         // Determine if user was active before this message and if so, update the hours
         // if the user has been last seen less than the configured timeframe, update the hours
-        if user.last_seen_at + chrono::Duration::seconds(settings.active_time as i64) < now {
+        if user.last_seen_at + chrono::Duration::seconds(settings.active_time as i64) > now {
             calculate_hours_and_money(&mut user, &now, settings, &conn);
         }
 
