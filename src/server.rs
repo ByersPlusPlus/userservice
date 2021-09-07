@@ -2,10 +2,11 @@
 extern crate diesel;
 #[macro_use]
 extern crate diesel_migrations;
+#[macro_use]
+extern crate serde;
 
 use std::env;
 use std::net::SocketAddr;
-use std::ops::Deref;
 
 use ::log::{debug, error, info};
 use chrono::NaiveDateTime;
@@ -15,26 +16,19 @@ use diesel::r2d2::ConnectionManager;
 use diesel::PgConnection;
 use diesel_migrations::embed_migrations;
 use dotenv::dotenv;
-use models::Group;
-use models::GroupPermission;
-use models::GroupUser;
-use models::InsertGroup;
-use models::InsertRank;
-use models::PermissionStrings;
-use models::User;
-use models::UserPermission;
+use models::{Group, GroupPermission, InsertGroup, InsertRank, User, UserPermission, Rank};
 use r2d2::Pool;
 use tonic::transport::Channel;
-use tonic::{transport::Server, Request, Response, Status};
+use tonic::Request;
 
 use userservice::user_service_server::{UserService, UserServiceServer};
-use userservice::{BppGroup, BppUser, BppUserById, BppUserFilter, BppUserFilters, BppUsers};
+use userservice::{BppGroup, BppUser};
 use youtubeservice::you_tube_service_client::YouTubeServiceClient;
-use youtubeservice::{GetMessageRequest, YouTubeChatMessage, YouTubeChatMessages};
 
 use crate::log::setup_log;
-use crate::models::Rank;
+use crate::settings::Settings;
 
+mod settings;
 mod log;
 mod macros;
 mod models;
@@ -66,7 +60,7 @@ pub fn connect_to_database() -> Pool<ConnectionManager<PgConnection>> {
     return pool;
 }
 
-fn calculate_hours_and_money(user: &mut User, now: &NaiveDateTime) {
+fn calculate_hours_and_money(user: &mut User, now: &NaiveDateTime, settings: Settings, conn: &PgConnection) {
     let new_hours_seconds;
     let new_hours_nanos;
     let hours_duration = chrono::Duration::seconds(user.hours_seconds)
@@ -86,9 +80,14 @@ fn calculate_hours_and_money(user: &mut User, now: &NaiveDateTime) {
     user.hours_seconds = new_hours_seconds;
     user.hours_nanos = new_hours_nanos;
 
-    // Grant 1 money per minute
-    // TODO: Implement payout bonus of ranks
-    let new_money = user.money + new_duration.num_minutes();
+    // Grant x money per minute
+    let mut money_per_minute = settings.default_payout;
+    let user_groups = Group::get_groups_for_user(user.channel_id.clone(), conn);
+    for group in user_groups {
+        money_per_minute += group.bonus_payout;
+    }
+
+    let new_money = user.money + money_per_minute as i64 * new_duration.num_minutes();
     info!(
         "Updating money of {} ({}) from {} to {}",
         user.channel_id, user.display_name, user.money, new_money
@@ -129,11 +128,12 @@ async fn fetch_users_from_messages(
         user.display_name = message.display_name.clone();
         user.last_seen_at = now;
 
+        let settings = Settings::new()?;
+
         // Determine if user was active before this message and if so, update the hours
-        // if the user has been last seen less than 5 minutes ago, update the hours
-        // TODO: Make the active time configurable
-        if user.last_seen_at + chrono::Duration::minutes(5) < now {
-            calculate_hours_and_money(&mut user, &now);
+        // if the user has been last seen less than the configured timeframe, update the hours
+        if user.last_seen_at + chrono::Duration::seconds(settings.active_time as i64) < now {
+            calculate_hours_and_money(&mut user, &now, settings, &conn);
         }
 
         // Update the user
@@ -144,7 +144,7 @@ async fn fetch_users_from_messages(
 }
 
 pub struct UserServer {
-    database_pool: DbPool,
+    database_pool: DbPool
 }
 
 #[tonic::async_trait]
@@ -323,7 +323,7 @@ impl UserService for UserServer {
 
     async fn get_groups(
         &self,
-        request: tonic::Request<()>,
+        _: tonic::Request<()>,
     ) -> Result<tonic::Response<userservice::BppGroups>, tonic::Status> {
         let conn = self.database_pool.get().unwrap();
         use schema::bpp_groups::dsl::*;
@@ -441,7 +441,7 @@ impl UserService for UserServer {
 
     async fn get_ranks(
         &self,
-        request: tonic::Request<()>,
+        _: tonic::Request<()>,
     ) -> Result<tonic::Response<userservice::BppRanks>, tonic::Status> {
         let conn = self.database_pool.get().unwrap();
         use schema::bpp_ranks::dsl::*;
@@ -624,6 +624,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     setup_log(env::var_os("DEBUG").is_some());
     debug!("Debug mode activated!");
 
+    info!("Loading settings...");
+    let _ = Settings::new()?;
+
     let pool = connect_to_database();
 
     let youtube_address = env::var("YTS_GRPC_ADDRESS").expect("YTS_GRPC_ADDRESS must be set");
@@ -638,15 +641,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Connected to youtubeservice! Time to go on a hunt!");
 
     let service = UserServer {
-        database_pool: pool.clone(),
+        database_pool: pool.clone()
     };
 
     info!("Starting message fetching and userservice");
     let (_, _) = tokio::join!(
+        fetch_users_from_messages(&mut youtube_client, &pool),
         tonic::transport::Server::builder()
             .add_service(UserServiceServer::new(service))
-            .serve(userservice_address),
-        fetch_users_from_messages(&mut youtube_client, &pool)
+            .serve(userservice_address)
     );
 
     return Ok(());

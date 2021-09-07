@@ -167,7 +167,7 @@ impl Deref for PermissionStrings {
 
 impl From<Vec<GroupPermission>> for PermissionStrings {
     fn from(permissions: Vec<GroupPermission>) -> Self {
-        let mut permissions: Vec<String> =
+        let permissions: Vec<String> =
             permissions.into_iter().map(|gp| gp.permission).collect();
         PermissionStrings(permissions)
     }
@@ -181,7 +181,7 @@ impl From<UserPermission> for String {
 
 impl From<Vec<UserPermission>> for PermissionStrings {
     fn from(permissions: Vec<UserPermission>) -> Self {
-        let mut permissions: Vec<String> =
+        let permissions: Vec<String> =
             permissions.into_iter().map(|up| up.permission).collect();
         PermissionStrings(permissions)
     }

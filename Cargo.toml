@@ -25,6 +25,8 @@ diesel = { version = "1.4.7", features = ["postgres", "r2d2", "chrono"] }
 diesel_migrations = "1.4.0"
 dotenv = "0.15.0"
 r2d2 = "0.8.9"
+config = { version = "0.11.0", features = ["toml"] }
+toml = "0.5.8"
 
 [build-dependencies]
 tonic-build = "0.5.2"
