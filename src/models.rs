@@ -1,7 +1,7 @@
 use std::ops::Deref;
 
 use super::schema::*;
-use super::userservice::{BppUser, BppGroup};
+use super::userservice::{BppUser, BppGroup, CreateBppGroup, BppRank, CreateBppRank};
 use crate::{bpp_foreign_model_impl, bpp_model_impl};
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
@@ -310,6 +310,53 @@ impl User {
             rank
         };
         return bpp_user;
+    }
+}
+
+impl From<CreateBppRank> for InsertRank {
+    fn from(rank: CreateBppRank) -> InsertRank {
+        let requirement = rank.hour_requirement.unwrap();
+        InsertRank {
+            rank_name: rank.rank_name,
+            hour_requirement_seconds: requirement.seconds,
+            hour_requirement_nanos: requirement.nanos,
+            rank_sorting: rank.rank_sorting,
+        }
+    }
+}
+
+impl From<BppRank> for Rank {
+    fn from(br: BppRank) -> Self {
+        let requirement = br.hour_requirement.unwrap();
+        Rank {
+            rank_id: br.rank_id,
+            rank_name: br.rank_name,
+            hour_requirement_seconds: requirement.seconds,
+            hour_requirement_nanos: requirement.nanos,
+            rank_sorting: br.rank_sorting,
+        }
+    }
+}
+
+impl From<&BppRank> for Rank {
+    fn from(br: &BppRank) -> Self {
+        Rank {
+            rank_id: br.rank_id,
+            rank_name: br.rank_name.clone(),
+            hour_requirement_seconds: br.hour_requirement.as_ref().unwrap().seconds,
+            hour_requirement_nanos: br.hour_requirement.as_ref().unwrap().nanos,
+            rank_sorting: br.rank_sorting,
+        }
+    }
+}
+
+impl From<CreateBppGroup> for InsertGroup {
+    fn from(cg: CreateBppGroup) -> InsertGroup {
+        InsertGroup {
+            group_name: cg.group_name,
+            bonus_payout: cg.bonus_payout,
+            group_sorting: cg.group_sorting,
+        }
     }
 }
 

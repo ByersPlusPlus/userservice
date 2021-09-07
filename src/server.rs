@@ -18,6 +18,8 @@ use dotenv::dotenv;
 use models::Group;
 use models::GroupPermission;
 use models::GroupUser;
+use models::InsertGroup;
+use models::InsertRank;
 use models::PermissionStrings;
 use models::User;
 use models::UserPermission;
@@ -26,11 +28,12 @@ use tonic::transport::Channel;
 use tonic::{transport::Server, Request, Response, Status};
 
 use userservice::user_service_server::{UserService, UserServiceServer};
-use userservice::{BppUser, BppUserById, BppUserFilter, BppUserFilters, BppUsers, BppGroup};
+use userservice::{BppGroup, BppUser, BppUserById, BppUserFilter, BppUserFilters, BppUsers};
 use youtubeservice::you_tube_service_client::YouTubeServiceClient;
 use youtubeservice::{GetMessageRequest, YouTubeChatMessage, YouTubeChatMessages};
 
 use crate::log::setup_log;
+use crate::models::Rank;
 
 mod log;
 mod macros;
@@ -158,7 +161,7 @@ impl UserService for UserServer {
             Some(user) => {
                 let bpp_user = user.to_userservice_user(&conn);
                 return Ok(tonic::Response::new(bpp_user));
-            },
+            }
             None => Err(tonic::Status::not_found("User not found")),
         }
     }
@@ -178,32 +181,32 @@ impl UserService for UserServer {
             match inner_filter {
                 userservice::bpp_user_filter::Filter::ChannelId(filter_channel_id) => {
                     query = query.filter(channel_id.eq(filter_channel_id));
-                },
+                }
                 userservice::bpp_user_filter::Filter::Name(filter_name) => {
                     query = query.filter(display_name.eq(filter_name));
-                },
+                }
                 userservice::bpp_user_filter::Filter::Hours(filter_hours) => {
                     query = query.filter(hours_seconds.eq(filter_hours));
-                },
+                }
                 userservice::bpp_user_filter::Filter::Money(filter_money) => {
                     query = query.filter(money.eq(filter_money));
                 }
             }
         }
-        
+
         match filter_request.sorting() {
             userservice::bpp_user_filters::SortingFields::HoursAsc => {
                 query = query.order_by(hours_seconds.asc());
-            },
+            }
             userservice::bpp_user_filters::SortingFields::HoursDesc => {
                 query = query.order_by(hours_seconds.desc());
-            },
+            }
             userservice::bpp_user_filters::SortingFields::MoneyAsc => {
                 query = query.order_by(money.asc());
-            },
+            }
             userservice::bpp_user_filters::SortingFields::MoneyDesc => {
                 query = query.order_by(money.desc());
-            },
+            }
             userservice::bpp_user_filters::SortingFields::Default => {}
         }
         let users = match query.load::<User>(&conn) {
@@ -213,7 +216,10 @@ impl UserService for UserServer {
                 return Err(tonic::Status::internal("Failed to load users"));
             }
         };
-        let users: Vec<BppUser> = users.into_iter().map(|user| user.to_userservice_user(&conn)).collect();
+        let users: Vec<BppUser> = users
+            .into_iter()
+            .map(|user| user.to_userservice_user(&conn))
+            .collect();
         let count = users.len() as i32;
 
         return Ok(tonic::Response::new(userservice::BppUsers { users, count }));
@@ -250,7 +256,9 @@ impl UserService for UserServer {
         let user_id = request.into_inner().channel_id;
         let conn = self.database_pool.get().unwrap();
         use schema::bpp_users::dsl::*;
-        diesel::delete(bpp_users.filter(channel_id.eq(user_id))).execute(&conn).unwrap();
+        diesel::delete(bpp_users.filter(channel_id.eq(user_id)))
+            .execute(&conn)
+            .unwrap();
         return Ok(tonic::Response::new(()));
     }
 
@@ -261,7 +269,9 @@ impl UserService for UserServer {
         let user_ids = request.into_inner().users;
         let conn = self.database_pool.get().unwrap();
         use schema::bpp_users::dsl::*;
-        diesel::delete(bpp_users.filter(channel_id.eq_any(user_ids))).execute(&conn).unwrap();
+        diesel::delete(bpp_users.filter(channel_id.eq_any(user_ids)))
+            .execute(&conn)
+            .unwrap();
         return Ok(tonic::Response::new(()));
     }
 
@@ -276,7 +286,10 @@ impl UserService for UserServer {
         return Ok(tonic::Response::new(user));
     }
 
-    async fn user_has_permission(&self, request:tonic::Request<userservice::UserPermissionCheck>) ->Result<tonic::Response<bool>,tonic::Status> {
+    async fn user_has_permission(
+        &self,
+        request: tonic::Request<userservice::UserPermissionCheck>,
+    ) -> Result<tonic::Response<bool>, tonic::Status> {
         let check = request.into_inner();
         let conn = self.database_pool.get().unwrap();
 
@@ -285,17 +298,22 @@ impl UserService for UserServer {
         let mut has_permission = check.granted_default;
 
         let mut user_groups = Group::get_groups_for_user(user_id.clone(), &conn);
-        user_groups.sort_by(|a, b|a.cmp(b));
+        user_groups.sort_by(|a, b| a.cmp(b));
         for group in user_groups {
-            let group_permissions = GroupPermission::get_permissions_for_group(group.group_id, &conn);
-            let searched_permission = group_permissions.iter().find(|group_permission| group_permission.permission == permission);
+            let group_permissions =
+                GroupPermission::get_permissions_for_group(group.group_id, &conn);
+            let searched_permission = group_permissions
+                .iter()
+                .find(|group_permission| group_permission.permission == permission);
             if searched_permission.is_some() {
                 has_permission = searched_permission.unwrap().granted;
             }
         }
 
         let user_permissions = UserPermission::get_permissions_for_user(user_id.clone(), &conn);
-        let searched_permission = user_permissions.iter().find(|perm|perm.permission == permission);
+        let searched_permission = user_permissions
+            .iter()
+            .find(|perm| perm.permission == permission);
         if searched_permission.is_some() {
             has_permission = searched_permission.unwrap().granted;
         }
@@ -309,19 +327,37 @@ impl UserService for UserServer {
     ) -> Result<tonic::Response<userservice::BppGroups>, tonic::Status> {
         let conn = self.database_pool.get().unwrap();
         use schema::bpp_groups::dsl::*;
-        let groups = bpp_groups.order(group_sorting.desc()).load::<Group>(&conn).unwrap();
-        let groups: Vec<BppGroup> = groups.into_iter().map(|group| {
-            let group_permissions = GroupPermission::get_permissions_for_group(group.group_id, &conn);
-            let group_permissions: Vec<userservice::Permission> = group_permissions.into_iter().map(|p|userservice::Permission {
-                permission: p.permission,
-                granted: p.granted,
+        let groups = bpp_groups
+            .order(group_sorting.desc())
+            .load::<Group>(&conn)
+            .unwrap();
+        let groups: Vec<BppGroup> = groups
+            .into_iter()
+            .map(|group| {
+                let group_permissions =
+                    GroupPermission::get_permissions_for_group(group.group_id, &conn);
+                let group_permissions: Vec<userservice::Permission> = group_permissions
+                    .into_iter()
+                    .map(|p| userservice::Permission {
+                        permission: p.permission,
+                        granted: p.granted,
+                    })
+                    .collect();
+
+                BppGroup {
+                    group_id: group.group_id,
+                    group_name: group.group_name,
+                    permissions: group_permissions,
+                    bonus_payout: group.bonus_payout,
+                    group_sorting: group.group_sorting,
+                }
             })
             .collect();
-
-            BppGroup { group_id: group.group_id, group_name: group.group_name, permissions: group_permissions, bonus_payout: group.bonus_payout, group_sorting: group.group_sorting }
-        }).collect();
         let count = groups.len() as i32;
-        return Ok(tonic::Response::new(userservice::BppGroups { groups, count }));
+        return Ok(tonic::Response::new(userservice::BppGroups {
+            groups,
+            count,
+        }));
     }
 
     async fn update_group(
@@ -355,7 +391,9 @@ impl UserService for UserServer {
         let id = request.into_inner().group_id;
         let conn = self.database_pool.get().unwrap();
         use schema::bpp_groups::dsl::*;
-        diesel::delete(bpp_groups.filter(group_id.eq(id))).execute(&conn).unwrap();
+        diesel::delete(bpp_groups.filter(group_id.eq(id)))
+            .execute(&conn)
+            .unwrap();
         return Ok(tonic::Response::new(()));
     }
 
@@ -366,7 +404,9 @@ impl UserService for UserServer {
         let group_ids = request.into_inner().groups;
         let conn = self.database_pool.get().unwrap();
         use schema::bpp_groups::dsl::*;
-        diesel::delete(bpp_groups.filter(group_id.eq_any(group_ids))).execute(&conn).unwrap();
+        diesel::delete(bpp_groups.filter(group_id.eq_any(group_ids)))
+            .execute(&conn)
+            .unwrap();
         return Ok(tonic::Response::new(()));
     }
 
@@ -374,65 +414,206 @@ impl UserService for UserServer {
         &self,
         request: tonic::Request<userservice::CreateBppGroup>,
     ) -> Result<tonic::Response<userservice::BppGroup>, tonic::Status> {
-        todo!()
+        let create_group = request.into_inner();
+        let conn = self.database_pool.get().unwrap();
+        let db_group: InsertGroup = create_group.into();
+        let created_group = db_group.save_to_database(&conn).unwrap();
+
+        let group_permissions =
+            GroupPermission::get_permissions_for_group(created_group.group_id, &conn);
+        let group_permissions: Vec<userservice::Permission> = group_permissions
+            .into_iter()
+            .map(|p| userservice::Permission {
+                permission: p.permission,
+                granted: p.granted,
+            })
+            .collect();
+
+        let group = BppGroup {
+            group_id: created_group.group_id,
+            group_name: created_group.group_name,
+            permissions: group_permissions,
+            bonus_payout: created_group.bonus_payout,
+            group_sorting: created_group.group_sorting,
+        };
+        return Ok(tonic::Response::new(group));
     }
 
     async fn get_ranks(
         &self,
         request: tonic::Request<()>,
     ) -> Result<tonic::Response<userservice::BppRanks>, tonic::Status> {
-        todo!()
+        let conn = self.database_pool.get().unwrap();
+        use schema::bpp_ranks::dsl::*;
+        let ranks = bpp_ranks
+            .order(rank_sorting.desc())
+            .load::<Rank>(&conn)
+            .unwrap();
+        let ranks: Vec<userservice::BppRank> = ranks
+            .into_iter()
+            .map(|rank| {
+                let hour_requirement = prost_types::Duration {
+                    seconds: rank.hour_requirement_seconds,
+                    nanos: rank.hour_requirement_nanos,
+                };
+
+                userservice::BppRank {
+                    rank_id: rank.rank_id,
+                    rank_name: rank.rank_name,
+                    rank_sorting: rank.rank_sorting,
+                    hour_requirement: Some(hour_requirement),
+                }
+            })
+            .collect();
+        let count = ranks.len() as i32;
+        return Ok(tonic::Response::new(userservice::BppRanks { ranks, count }));
     }
 
     async fn update_rank(
         &self,
         request: tonic::Request<userservice::BppRank>,
     ) -> Result<tonic::Response<userservice::BppRank>, tonic::Status> {
-        todo!()
+        let rank = request.into_inner();
+        let conn = self.database_pool.get().unwrap();
+        let db_rank: Rank = (&rank).into();
+        db_rank.save_to_database(&conn).unwrap();
+        return Ok(tonic::Response::new(rank));
     }
 
     async fn update_ranks(
         &self,
         request: tonic::Request<userservice::BppRanks>,
     ) -> Result<tonic::Response<userservice::BppRanks>, tonic::Status> {
-        todo!()
+        let ranks = request.into_inner();
+        let conn = self.database_pool.get().unwrap();
+        for rank in &ranks.ranks {
+            let db_rank: Rank = rank.into();
+            db_rank.save_to_database(&conn).unwrap();
+        }
+        return Ok(tonic::Response::new(ranks));
     }
 
     async fn delete_rank(
         &self,
         request: tonic::Request<userservice::BppRankId>,
     ) -> Result<tonic::Response<()>, tonic::Status> {
-        todo!()
+        let id = request.into_inner().rank_id;
+        let conn = self.database_pool.get().unwrap();
+        use schema::bpp_ranks::dsl::*;
+        diesel::delete(bpp_ranks.filter(rank_id.eq(id)))
+            .execute(&conn)
+            .unwrap();
+        return Ok(tonic::Response::new(()));
     }
 
     async fn delete_ranks(
         &self,
         request: tonic::Request<userservice::BppRankIds>,
     ) -> Result<tonic::Response<()>, tonic::Status> {
-        todo!()
+        let rank_ids = request.into_inner().ranks;
+        let conn = self.database_pool.get().unwrap();
+        use schema::bpp_ranks::dsl::*;
+        diesel::delete(bpp_ranks.filter(rank_id.eq_any(rank_ids)))
+            .execute(&conn)
+            .unwrap();
+        return Ok(tonic::Response::new(()));
     }
 
     async fn create_rank(
         &self,
         request: tonic::Request<userservice::CreateBppRank>,
     ) -> Result<tonic::Response<userservice::BppRank>, tonic::Status> {
-        todo!()
+        let create_rank = request.into_inner();
+        let conn = self.database_pool.get().unwrap();
+        let db_rank: InsertRank = create_rank.into();
+        let created_rank = db_rank.save_to_database(&conn).unwrap();
+        let hour_requirement = prost_types::Duration {
+            seconds: created_rank.hour_requirement_seconds,
+            nanos: created_rank.hour_requirement_nanos,
+        };
+        let rank = userservice::BppRank {
+            rank_id: created_rank.rank_id,
+            rank_name: created_rank.rank_name,
+            rank_sorting: created_rank.rank_sorting,
+            hour_requirement: Some(hour_requirement),
+        };
+        return Ok(tonic::Response::new(rank));
     }
 
-    async fn user_grant_permission(&self,request:tonic::Request<userservice::Permission>,)->Result<tonic::Response<()>,tonic::Status> {
-        todo!()
+    async fn user_grant_permission(
+        &self,
+        request: tonic::Request<userservice::UserPermission>,
+    ) -> Result<tonic::Response<()>, tonic::Status> {
+        let granted_permission = request.into_inner();
+        let conn = self.database_pool.get().unwrap();
+        use schema::bpp_users_permissions::dsl::*;
+        let db_permission = models::UserPermission {
+            channel_id: granted_permission.channel_id,
+            permission: granted_permission.permission,
+            granted: true
+        };
+        diesel::insert_into(bpp_users_permissions)
+            .values(&db_permission)
+            .execute(&conn)
+            .unwrap();
+        return Ok(tonic::Response::new(()));
     }
 
-    async fn user_revoke_permisison(&self,request:tonic::Request<userservice::Permission>,)->Result<tonic::Response<()>,tonic::Status> {
-        todo!()
+    async fn user_revoke_permisison(
+        &self,
+        request: tonic::Request<userservice::UserPermission>,
+    ) -> Result<tonic::Response<()>, tonic::Status> {
+        let revoked_permission = request.into_inner();
+        let conn = self.database_pool.get().unwrap();
+        use schema::bpp_users_permissions::dsl::*;
+        let db_permission = models::UserPermission {
+            channel_id: revoked_permission.channel_id,
+            permission: revoked_permission.permission,
+            granted: false
+        };
+        diesel::insert_into(bpp_users_permissions)
+            .values(&db_permission)
+            .execute(&conn)
+            .unwrap();
+        return Ok(tonic::Response::new(()));
     }
 
-    async fn group_grant_permission(&self,request:tonic::Request<userservice::Permission>,)->Result<tonic::Response<()>,tonic::Status> {
-        todo!()
+    async fn group_grant_permission(
+        &self,
+        request: tonic::Request<userservice::GroupPermission>,
+    ) -> Result<tonic::Response<()>, tonic::Status> {
+        let granted_permission = request.into_inner();
+        let conn = self.database_pool.get().unwrap();
+        use schema::bpp_groups_permissions::dsl::*;
+        let db_permission = models::GroupPermission {
+            group_id: granted_permission.group_id,
+            permission: granted_permission.permission,
+            granted: true
+        };
+        diesel::insert_into(bpp_groups_permissions)
+            .values(&db_permission)
+            .execute(&conn)
+            .unwrap();
+        return Ok(tonic::Response::new(()));
     }
 
-    async fn group_revoke_permission(&self,request:tonic::Request<userservice::Permission>,)->Result<tonic::Response<()>,tonic::Status> {
-        todo!()
+    async fn group_revoke_permission(
+        &self,
+        request: tonic::Request<userservice::GroupPermission>,
+    ) -> Result<tonic::Response<()>, tonic::Status> {
+        let revoked_permission = request.into_inner();
+        let conn = self.database_pool.get().unwrap();
+        use schema::bpp_groups_permissions::dsl::*;
+        let db_permission = models::GroupPermission {
+            group_id: revoked_permission.group_id,
+            permission: revoked_permission.permission,
+            granted: false
+        };
+        diesel::insert_into(bpp_groups_permissions)
+            .values(&db_permission)
+            .execute(&conn)
+            .unwrap();
+        return Ok(tonic::Response::new(()));
     }
 }
 
