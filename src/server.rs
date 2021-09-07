@@ -66,10 +66,11 @@ fn calculate_hours_and_money(user: &mut User, now: &NaiveDateTime, settings: Set
     let hours_duration = chrono::Duration::seconds(user.hours_seconds)
         + chrono::Duration::nanoseconds(user.hours_nanos.into());
     let new_duration = *now - user.last_seen_at;
+    debug!("Between the last time the user was seen and now, {} seconds have passed", new_duration.num_seconds());
     let hours = hours_duration + new_duration;
     new_hours_seconds = hours.num_seconds();
     new_hours_nanos = hours.num_nanoseconds().unwrap() as i32;
-    info!(
+    debug!(
         "Updating hours of {} ({}) from {} to {}",
         user.channel_id,
         user.display_name,
@@ -126,7 +127,6 @@ async fn fetch_users_from_messages(
         };
 
         user.display_name = message.display_name.clone();
-        user.last_seen_at = now;
 
         let settings = Settings::new()?;
 
@@ -135,6 +135,7 @@ async fn fetch_users_from_messages(
         if user.last_seen_at + chrono::Duration::seconds(settings.active_time as i64) > now {
             calculate_hours_and_money(&mut user, &now, settings, &conn);
         }
+        user.last_seen_at = now;
 
         // Update the user
         user.save_to_database(&conn).unwrap();
