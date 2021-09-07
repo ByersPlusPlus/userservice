@@ -116,7 +116,6 @@ async fn fetch_users_from_messages(
                 message.channel_id.clone(),
                 message.display_name.clone(),
                 0,
-                0,
                 0 as f64,
                 now,
                 now,

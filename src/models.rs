@@ -208,7 +208,6 @@ impl User {
         channel_id: String,
         display_name: String,
         hours_seconds: i64,
-        hours_nanos: i32,
         money: f64,
         first_seen_at: NaiveDateTime,
         last_seen_at: NaiveDateTime,
