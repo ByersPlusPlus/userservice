@@ -18,6 +18,8 @@ use diesel_migrations::embed_migrations;
 use dotenv::dotenv;
 use models::{Group, GroupPermission, InsertGroup, InsertRank, User, UserPermission, Rank};
 use r2d2::Pool;
+use tonic::Response;
+use tonic::Status;
 use tonic::transport::Channel;
 use tonic::Request;
 
@@ -318,6 +320,32 @@ impl UserService for UserServer {
         return Ok(tonic::Response::new(has_permission));
     }
 
+    async fn get_group(&self, request: Request<i32>) -> Result<Response<userservice::BppGroup>, Status> {
+        let group_id = request.into_inner();
+        let conn = self.database_pool.get().unwrap();
+        let group = Group::get_from_database(&group_id, &conn);
+        if group.is_none() {
+            return Err(Status::not_found("Group not found"));
+        }
+        let group = group.unwrap();
+        let group_permissions = GroupPermission::get_permissions_for_group(group_id, &conn);
+        let group_permissions: Vec<userservice::Permission> = group_permissions
+            .into_iter()
+            .map(|group_permission| userservice::Permission {
+                permission: group_permission.permission,
+                granted: group_permission.granted,
+            })
+            .collect();
+        let bpp_group = BppGroup {
+            group_id: group.group_id,
+            group_name: group.group_name,
+            permissions: group_permissions,
+            bonus_payout: group.bonus_payout,
+            group_sorting: group.group_sorting,
+        };
+        return Ok(Response::new(bpp_group));
+    }
+
     async fn get_groups(
         &self,
         _: tonic::Request<()>,
@@ -434,6 +462,29 @@ impl UserService for UserServer {
             group_sorting: created_group.group_sorting,
         };
         return Ok(tonic::Response::new(group));
+    }
+
+    async fn get_rank(&self, request:tonic::Request<i32>) ->Result<tonic::Response<userservice::BppRank>,tonic::Status> {
+        let conn = self.database_pool.get().unwrap();
+        let rank = request.into_inner();
+        let rank = Rank::get_from_database(&rank, &conn);
+
+        if rank.is_none() {
+            return Err(Status::not_found("Rank not found"));
+        }
+        let rank = rank.unwrap();
+
+        let hour_requirement = prost_types::Duration {
+            seconds: rank.hour_requirement_seconds,
+            nanos: rank.hour_requirement_nanos,
+        };
+        let rank = userservice::BppRank {
+            rank_id: rank.rank_id,
+            rank_name: rank.rank_name,
+            rank_sorting: rank.rank_sorting,
+            hour_requirement: Some(hour_requirement),
+        };
+        return Ok(tonic::Response::new(rank));
     }
 
     async fn get_ranks(
