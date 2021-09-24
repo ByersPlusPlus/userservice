@@ -47,6 +47,6 @@ impl Settings {
         let config_str = toml::to_string(&self)?;
         File::create("config/userservice.toml")?.write_all(config_str.as_bytes())?;
 
-        return Ok(());
+        Ok(())
     }
 }

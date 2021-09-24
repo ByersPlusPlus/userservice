@@ -59,7 +59,7 @@ pub fn connect_to_database() -> Pool<ConnectionManager<PgConnection>> {
     // Run migrations
     let _ = embedded_migrations::run_with_output(&pool.get().unwrap(), &mut std::io::stdout());
 
-    return pool;
+    pool
 }
 
 fn calculate_hours_and_money(user: &mut User, now: &NaiveDateTime, settings: Settings, conn: &PgConnection) {
@@ -139,7 +139,7 @@ async fn fetch_users_from_messages(
         user.save_to_database(&conn).unwrap();
     }
 
-    return Ok(());
+    Ok(())
 }
 
 pub struct UserServer {
@@ -150,9 +150,9 @@ pub struct UserServer {
 impl UserService for UserServer {
     async fn get_user_by_id(
         &self,
-        request: tonic::Request<userservice::BppUserById>,
+        request: tonic::Request<String>,
     ) -> Result<tonic::Response<userservice::BppUser>, tonic::Status> {
-        let user_id = request.into_inner().channel_id;
+        let user_id = request.into_inner();
         let conn = self.database_pool.get().unwrap();
         let potential_user = User::get_from_database(&user_id, &conn);
 
@@ -250,9 +250,9 @@ impl UserService for UserServer {
 
     async fn delete_user(
         &self,
-        request: tonic::Request<userservice::BppUserId>,
+        request: tonic::Request<String>,
     ) -> Result<tonic::Response<()>, tonic::Status> {
-        let user_id = request.into_inner().channel_id;
+        let user_id = request.into_inner();
         let conn = self.database_pool.get().unwrap();
         use schema::bpp_users::dsl::*;
         diesel::delete(bpp_users.filter(channel_id.eq(user_id)))
@@ -297,24 +297,24 @@ impl UserService for UserServer {
         let mut has_permission = check.granted_default;
 
         let mut user_groups = Group::get_groups_for_user(user_id.clone(), &conn);
-        user_groups.sort_by(|a, b| a.cmp(b));
+        user_groups.sort();
         for group in user_groups {
             let group_permissions =
                 GroupPermission::get_permissions_for_group(group.group_id, &conn);
             let searched_permission = group_permissions
                 .iter()
                 .find(|group_permission| group_permission.permission == permission);
-            if searched_permission.is_some() {
-                has_permission = searched_permission.unwrap().granted;
+            if let Some(searched_permission) = searched_permission {
+                has_permission = searched_permission.granted;
             }
         }
 
-        let user_permissions = UserPermission::get_permissions_for_user(user_id.clone(), &conn);
+        let user_permissions = UserPermission::get_permissions_for_user(user_id, &conn);
         let searched_permission = user_permissions
             .iter()
             .find(|perm| perm.permission == permission);
-        if searched_permission.is_some() {
-            has_permission = searched_permission.unwrap().granted;
+        if let Some(searched_permission) = searched_permission {
+            has_permission = searched_permission.granted;
         }
 
         return Ok(tonic::Response::new(has_permission));
@@ -411,9 +411,9 @@ impl UserService for UserServer {
 
     async fn delete_group(
         &self,
-        request: tonic::Request<userservice::BppGroupId>,
+        request: tonic::Request<i32>,
     ) -> Result<tonic::Response<()>, tonic::Status> {
-        let id = request.into_inner().group_id;
+        let id = request.into_inner();
         let conn = self.database_pool.get().unwrap();
         use schema::bpp_groups::dsl::*;
         diesel::delete(bpp_groups.filter(group_id.eq(id)))
@@ -543,9 +543,9 @@ impl UserService for UserServer {
 
     async fn delete_rank(
         &self,
-        request: tonic::Request<userservice::BppRankId>,
+        request: tonic::Request<i32>,
     ) -> Result<tonic::Response<()>, tonic::Status> {
-        let id = request.into_inner().rank_id;
+        let id = request.into_inner();
         let conn = self.database_pool.get().unwrap();
         use schema::bpp_ranks::dsl::*;
         diesel::delete(bpp_ranks.filter(rank_id.eq(id)))
@@ -700,5 +700,5 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .serve(userservice_address)
     );
 
-    return Ok(());
+    Ok(())
 }

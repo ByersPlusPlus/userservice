@@ -222,14 +222,14 @@ impl User {
         }
     }
 
-    pub fn check_if_exists(check_channel_id: &String, conn: &diesel::PgConnection) -> bool {
+    pub fn check_if_exists(check_channel_id: &str, conn: &diesel::PgConnection) -> bool {
         use super::schema::bpp_users::dsl::*;
         use diesel::dsl::exists;
         use diesel::select;
         let exists: bool = select(exists(bpp_users.filter(channel_id.eq(check_channel_id))))
             .get_result(conn)
             .unwrap();
-        return exists;
+        exists
     }
 
     pub fn get_active_rank(&self, conn: &diesel::PgConnection) -> Option<Rank> {
@@ -240,13 +240,14 @@ impl User {
             .filter(hour_requirement_seconds.le(self.hours_seconds))
             .order(rank_sorting.desc())
             .first::<Rank>(conn).ok();
-        return rank;
+        rank
     }
 
-    pub fn to_userservice_user(self, conn: &diesel::PgConnection) -> BppUser {
-        let mut prost_duration = prost_types::Duration::default();
-        prost_duration.seconds = self.hours_seconds;
-        prost_duration.nanos = 0;
+    pub fn to_userservice_user(&self, conn: &diesel::PgConnection) -> BppUser {
+        let prost_duration = prost_types::Duration {
+            seconds: self.hours_seconds,
+            nanos: 0,
+        };
 
         let first_seen_at_ts = prost_types::Timestamp {
             seconds: self.first_seen_at.timestamp() as i64,
@@ -257,9 +258,9 @@ impl User {
             nanos: self.last_seen_at.timestamp_subsec_nanos() as i32,
         };
 
-        let groups = Group::get_groups_for_user(self.channel_id.clone(), &conn);
+        let groups = Group::get_groups_for_user(self.channel_id.clone(), conn);
         let permissions =
-            UserPermission::get_permissions_for_user(self.channel_id.clone(), &conn);
+            UserPermission::get_permissions_for_user(self.channel_id.clone(), conn);
         let permissions: Vec<super::userservice::Permission> = permissions.into_iter()
             .map(|p|super::userservice::Permission {
                 permission: p.permission,
@@ -270,7 +271,7 @@ impl User {
             .iter()
             .map(|group| {
                 let permissions =
-                    GroupPermission::get_permissions_for_group(group.group_id, &conn);
+                    GroupPermission::get_permissions_for_group(group.group_id, conn);
                 let permissions = permissions.into_iter()
                     .map(|p|super::userservice::Permission {
                         permission: p.permission,
@@ -288,15 +289,15 @@ impl User {
             })
             .collect::<Vec<super::userservice::BppGroup>>();
 
-        let rank = if let Some(rank) = self.get_active_rank(&conn) {
+        let rank = if let Some(rank) = self.get_active_rank(conn) {
             rank.rank_name
         } else {
             "default".to_string()
         };
 
-        let bpp_user = BppUser {
-            channel_id: self.channel_id,
-            display_name: self.display_name,
+        BppUser {
+            channel_id: self.channel_id.clone(),
+            display_name: self.display_name.clone(),
             hours: Some(prost_duration),
             money: self.money,
             first_seen_at: Some(first_seen_at_ts),
@@ -304,8 +305,7 @@ impl User {
             groups,
             permissions,
             rank
-        };
-        return bpp_user;
+        }
     }
 }
 
